@@ -1,0 +1,59 @@
+name: Restructure onboard compute survey
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/restructure_onboard_compute_survey.yml
+
+permissions:
+  contents: write
+
+jobs:
+  restructure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restructure survey document
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('环境-算力/星上算力环境调研.md')
+          text = p.read_text(encoding='utf-8')
+
+          # Move the existing resource-tier section into Section 3.
+          start = text.index('## 6. 四档星上资源环境与规划扩展档')
+          end = text.index('## 7. 对 VLM/RSFM 部署的直接启示')
+          tiers = text[start:end].replace(
+              '## 6. 四档星上资源环境与规划扩展档',
+              '### 3.5 按资源档位的可部署边界'
+          )
+          insert_at = text.index('## 4. 已发射或有在轨证据的平台')
+          text = text[:start] + text[end:]
+          insert_at = text.index('## 4. 已发射或有在轨证据的平台')
+          text = text[:insert_at] + tiers.rstrip() + '\n\n' + text[insert_at:]
+
+          # Renumber the remaining main sections.
+          text = text.replace('## 7. 对 VLM/RSFM 部署的直接启示', '## 6. 对 VLM/RSFM 部署的直接启示')
+          text = text.replace('### 7.1 算力不是单变量', '### 6.1 算力不是单变量')
+          text = text.replace('### 7.2 对单星 VLM 的现实能力边界', '### 6.2 对单星 VLM 的现实能力边界')
+          text = text.replace('### 7.3 对星座协同的启示', '### 6.3 对星座协同的启示')
+          text = text.replace('## 8. 研究空白与建议采集的数据', '## 7. 研究空白与建议采集的数据')
+          text = text.replace('## 9. 核心来源', '## 8. 核心来源')
+
+          # Remove the former usage-limits section entirely.
+          limits_start = text.index('## 10. 使用限制')
+          appendix_start = text.index('## 附录 A. Sang 原文复核与修正')
+          text = text[:limits_start].rstrip() + '\n\n' + text[appendix_start:]
+
+          p.write_text(text, encoding='utf-8')
+          PY
+      - name: Commit result and remove temporary workflow
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/restructure_onboard_compute_survey.yml
+          git add '环境-算力/星上算力环境调研.md'
+          git commit -m 'docs: integrate resource tiers and remove usage limits'
+          git push
