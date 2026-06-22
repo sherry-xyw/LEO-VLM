@@ -1,0 +1,81 @@
+name: Consolidate legacy single-satellite notes
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/consolidate_single_satellite_notes.yml
+
+permissions:
+  contents: write
+
+jobs:
+  consolidate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Merge unique legacy notes and remove legacy file
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          main = Path('单星部署-综述正文与技术证据.md')
+          legacy = Path('单星部署.md')
+          text = main.read_text(encoding='utf-8')
+
+          old = '除特别标注外，VLM 的视觉 token 控制、KV cache 管理、量化和运行时优化大多仍缺少直接在轨验证；写作时不得将其表述为已获飞行证明。'
+          new = '除 GeoFM 和 NAVI-Orbital 等少数已在轨演示外，VLM 的视觉 token 控制、KV cache 管理、量化和运行时优化大多仍缺少直接在轨验证；写作时必须逐项标注证据层级，不能将地面或端侧结果表述为已获飞行证明。'
+          if old in text:
+              text = text.replace(old, new, 1)
+
+          if '## 附录 A. 从旧工作笔记迁入的扩展文献池' not in text:
+              appendix = r'''
+
+---
+
+## 附录 A. 从旧工作笔记迁入的扩展文献池
+
+本附录保留原 `单星部署.md` 中尚未逐项复核、但可能补强正文的候选资料。它们不是当前正文结论的直接证据；每条在写入正文前，均需复核原始论文、实验平台、输入设置、指标口径及其与星上条件的关系。
+
+### A.1 可补强的技术路线
+
+| 技术方向 | 候选资料 | 可能补强的位置 | 核验重点 |
+| --- | --- | --- | --- |
+| ViT 量化 | APHQ-ViT | §2.2 视觉编码器量化 | 是否有真实硬件时延与遥感输入证据 |
+| 动态 token/层级退出 | DynamicViT、A-ViT | §2.1 token 控制；§3.2 动态治理 | 小目标、边界任务和置信度校准 |
+| KV 淘汰 | H2O | §2.3 长序列缓存 | 关键视觉 anchor 是否会被错误淘汰 |
+| 结构化稀疏 | SparseGPT、N:M structured sparsity | §2.2 与 §3.1 | 目标平台是否有对应 sparse kernel |
+| 轻量视觉—语言蒸馏 | TinyCLIP | §2.2 紧凑模型 | 是否能转移到遥感跨模态任务 |
+| 遥感专用压缩 | GHOST、RemoteTrimmer | §2.1/§2.2 遥感特化证据 | 数据集、硬件、端到端能耗和泛化 |
+| 端侧 VLM 实测 | MobileVLM、MiniCPM-V | §3.1 平台执行 | Jetson/移动端配置、上下文、输入和功耗模式 |
+
+### A.2 迁入后的处理原则
+
+- **PEFT 资料**：LoRA、QLoRA、Visual Prompt Tuning 与 LoRA-Det 仅保留为“持续适应：在轨微调”章节的接口证据，不在本章展开训练策略。
+- **工具链资料**：Jetson、TensorRT、TVM、ONNX、Vitis AI、OpenVINO、Myriad 2、HPSC、HPE Spaceborne 和 hls4ml 的资料只用于平台能力与部署链路说明；具体性能应使用任务级、硬件实测数据，不以产品页标称值代替。
+- **MoE 与稀疏路线**：可作为远期探索路线，但在缺乏空间级 kernel、热稳态与容错数据前，不得作为当前单星部署的主推荐方案。
+
+### A.3 最新在轨 VLM 证据的更正
+
+NAVI-Orbital 报告在 2026-04-16 于低轨航天器上完成本地视觉—语言模型的自主多模态推理，包括场景分类、文本描述和自然语言交互。它是当前“单星 VLM 已在轨执行”证据的重要补充，但尚不涵盖 token 压缩、KV 管理、量化策略或辐射容错的系统性对比。[R27]
+'''
+              anchor = '\n## 10. 参考文献\n'
+              text = text.replace(anchor, appendix + anchor, 1)
+
+          ref = '- **[R27]** J. M. Delfa Victoria et al., “NAVI-Orbital: First In-Orbit Demonstration of a Zero-Shot Vision-Language Model for Autonomous Earth Observation,” arXiv:2606.18271, 2026.\n'
+          if '[R27]' not in text:
+              text = text.rstrip() + '\n' + ref
+
+          main.write_text(text, encoding='utf-8')
+          if legacy.exists():
+              legacy.unlink()
+          PY
+      - name: Commit result and remove workflow
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/consolidate_single_satellite_notes.yml
+          git add '单星部署-综述正文与技术证据.md'
+          git add -u
+          git commit -m 'docs: consolidate legacy single-satellite notes'
+          git push
